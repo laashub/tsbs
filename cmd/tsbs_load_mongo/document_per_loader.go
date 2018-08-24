@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"github.com/globalsign/mgo"
-	"github.com/timescale/tsbs/cmd/tsbs_generate_data/serialize"
-	"github.com/timescale/tsbs/load"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_data/serialize"
+	"github.com/hagen1778/tsbs/load"
 )
 
 // naiveBenchmark allows you to run a benchmark using the naive, one document per

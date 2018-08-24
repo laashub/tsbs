@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/timescale/tsbs/cmd/tsbs_generate_data/common"
-	"github.com/timescale/tsbs/cmd/tsbs_generate_data/serialize"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_data/common"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_data/serialize"
 )
 
 type monotonicDistribution struct {

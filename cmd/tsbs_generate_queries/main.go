@@ -13,12 +13,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/databases/cassandra"
-	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/databases/influx"
-	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/databases/mongo"
-	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/databases/timescaledb"
-	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/uses/devops"
-	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/utils"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/databases/cassandra"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/databases/influx"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/databases/mongo"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/databases/timescaledb"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/uses/devops"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/utils"
 )
 
 var useCaseMatrix = map[string]map[string]utils.QueryFillerMaker{

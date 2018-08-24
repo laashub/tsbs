@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/globalsign/mgo/bson"
-	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/uses/devops"
-	"github.com/timescale/tsbs/query"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/uses/devops"
+	"github.com/hagen1778/tsbs/query"
 )
 
 func init() {

@@ -15,7 +15,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"github.com/timescale/tsbs/query"
+	"github.com/hagen1778/tsbs/query"
 )
 
 // Program option vars:

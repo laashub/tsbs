@@ -3,7 +3,7 @@ package common
 import (
 	"time"
 
-	"github.com/timescale/tsbs/cmd/tsbs_generate_data/serialize"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_data/serialize"
 )
 
 // SimulatorConfig is an interface to create a Simulator from a time.Duration

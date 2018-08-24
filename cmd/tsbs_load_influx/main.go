@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/timescale/tsbs/load"
+	"github.com/hagen1778/tsbs/load"
 	"github.com/valyala/fasthttp"
 )
 
