@@ -3,66 +3,110 @@ package serialize
 import (
 	"io"
 	"fmt"
-	"strconv"
+	"sync"
+
+	"github.com/hagen1778/prometheus/prompb"
 )
 
+const PrometheusBatchSize = 25*1e3
+
 // PrometheusSerializer writes a Point in a serialized form for Prometheus
-type PrometheusSerializer struct{}
+type PrometheusSerializer struct {
+	cur    int
+	series []*prompb.TimeSeries
+	w      io.Writer
+}
+
+// Flush flushes collected series into writer
+func (s *PrometheusSerializer) Flush() error {
+	request := &prompb.WriteRequest{
+		Timeseries: s.series[:s.cur],
+	}
+	data, err := request.Marshal()
+	if err != nil {
+		return err
+	}
+
+	var sizeBuf []byte
+	sizeBuf = marshalUint64(sizeBuf[:0], uint64(len(data)))
+	if _, err := s.w.Write(sizeBuf); err != nil {
+		return err
+	}
+
+	_, err = s.w.Write(data)
+	s.cur = 0
+	return err
+}
+
+func (s *PrometheusSerializer) Push(ts *prompb.TimeSeries) error {
+	if s.cur > PrometheusBatchSize-1 {
+		if err := s.Flush(); err != nil {
+			return err
+		}
+	}
+	s.series[s.cur] = ts
+	s.cur++
+	return nil
+}
+
+var once sync.Once
 
 // Serialize writes Point data to the given writer, conforming to the
 // Prometheus wire protocol.
 func (s *PrometheusSerializer) Serialize(p *Point, w io.Writer) (err error) {
-	var labels []byte
+	once.Do(func() {
+		s.w = w
+		s.series = make([]*prompb.TimeSeries, PrometheusBatchSize)
+	})
+
 	labelsLen := len(p.tagKeys)
+	labels := make([]*prompb.Label, labelsLen)
 	if labelsLen > 0 {
-		labels = make([]byte, 0)
-		labels = append(labels, '{')
 		for i := 0; i < labelsLen; i++ {
-			labels = append(labels, p.tagKeys[i]...)
-			labels = append(labels,'=')
-			labels = append(labels,'"')
-			labels = append(labels, p.tagValues[i]...)
-			labels = append(labels,'"')
-			if i != labelsLen-1 {
-				labels = append(labels, ',')
+			labels[i] = &prompb.Label{
+				Name:  string(p.tagKeys[i]),
+				Value: string(p.tagValues[i]),
 			}
 		}
-		labels = append(labels, '}')
 	}
-
-	buf := scratchBufPool.Get().([]byte)
+	prefix := string(p.measurementName)
 	for i := 0; i < len(p.fieldKeys); i++ {
-		buf = append(buf, p.measurementName...)
-		buf = append(buf, '_')
-		buf = append(buf, p.fieldKeys[i]...)
-
-		if labelsLen > 0 {
-			buf = append(buf, labels...)
+		ts := &prompb.TimeSeries{
+			Labels:  labels,
+			Samples: make([]*prompb.Sample, 1),
 		}
-
-		buf = append(buf, ' ')
-		buf = valueAppend(p.fieldValues[i], buf)
-		buf = append(buf, ' ')
-		buf = valueAppend(p.timestamp.UnixNano()/1e6, buf)
-		buf = append(buf, '\n')
+		labelName := &prompb.Label{
+			Name:  "__name__",
+			Value: fmt.Sprintf("%s_%s", prefix, string(p.fieldKeys[i])),
+		}
+		ts.Labels = append(ts.Labels, labelName)
+		ts.Samples[0] = &prompb.Sample{
+			Timestamp: p.timestamp.UnixNano() / 1e6,
+			Value:     toFloat64(p.fieldValues[i]),
+		}
+		if err := s.Push(ts); err != nil {
+			return err
+		}
 	}
-	_, err = w.Write(buf)
-	buf = buf[:0]
-	scratchBufPool.Put(buf)
-	return err
+	return nil
 }
 
-func valueAppend(v interface{}, buf []byte) []byte {
+func toFloat64(v interface{}) float64 {
 	switch v.(type) {
 	case int:
-		return strconv.AppendFloat(buf, float64(v.(int)), 'f', -1, 64)
+		return float64(v.(int))
 	case int64:
-		return strconv.AppendFloat(buf, float64(v.(int64)), 'f', -1, 64)
+		return float64(v.(int64))
 	case float64:
-		return strconv.AppendFloat(buf, v.(float64), 'f', -1, 64)
+		return v.(float64)
 	case float32:
-		return strconv.AppendFloat(buf, float64(v.(float32)), 'f', -1, 32)
+		return float64(v.(float32))
 	default:
 		panic(fmt.Sprintf("unknown field type for %#v", v))
 	}
+}
+
+// marshalUint64 appends marshaled v to dst and returns the result.
+func marshalUint64(dst []byte, u uint64) []byte {
+	return append(dst, byte(u>>56), byte(u>>48), byte(u>>40), byte(u>>32), byte(u>>24), byte(u>>16), byte(u>>8), byte(u))
 }

@@ -6,36 +6,33 @@ import (
 	"log"
 	"time"
 	"net/http"
-
-	"github.com/hagen1778/tsbs/load"
-	"github.com/prometheus/prometheus/prompb"
 	"fmt"
 	"bytes"
 	"io/ioutil"
+
+	"github.com/hagen1778/tsbs/load"
 	"github.com/klauspost/compress/snappy"
-	"sync"
+
 	_ "net/http/pprof"
-
+	"github.com/valyala/bytebufferpool"
 )
 
-// Global vars
 var (
-	loader  *load.BenchmarkRunner
+	loader           *load.BenchmarkRunner
+	remoteStorageURL string
 )
 
-var remoteStorageURL string
-
-// Parse args:
 func init() {
 	loader = load.GetBenchmarkRunner()
 	flag.StringVar(&remoteStorageURL, "url", "http://localhost:8080", "Prometheus Remote Storage Insert daemon URL")
 	flag.Parse()
+	remoteStorageURL = fmt.Sprintf("%s/prometheus/insert", remoteStorageURL)
 }
 
 type benchmark struct{}
 
 func (b *benchmark) GetPointDecoder(br *bufio.Reader) load.PointDecoder {
-	return &decoder{scanner: bufio.NewScanner(br)}
+	return &decoder{scanner: &scanner{r: br}}
 }
 
 func (b *benchmark) GetBatchFactory() load.BatchFactory {
@@ -73,58 +70,35 @@ func (p *processor) Init(numWorker int, _ bool) {
 
 func (p *processor) Close(_ bool) {}
 
-type buffer struct {
-	b []byte
-}
-
-func newBufferForPool() interface{} {
-	return &buffer{}
-}
-
-var (
-	snappyBufferPool = &sync.Pool{
-		New: newBufferForPool,
-	}
-)
 func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 	batch := b.(*batch)
 	if doLoad {
-		var err error
-		req := &prompb.WriteRequest{
-			Timeseries: batch.timeSeries,
-		}
-		data, err := req.Marshal()
-		if err != nil{
-			log.Fatal(err)
-		}
-		sb := snappyBufferPool.Get().(*buffer)
-		sb.b = snappy.Encode(sb.b, data)
-		url := fmt.Sprintf("%s/prometheus/insert", remoteStorageURL)
-		httpReq, err := http.NewRequest("POST", url,  bytes.NewReader(sb.b))
+		sb := bytebufferpool.Get()
+		sb.B = snappy.Encode(sb.B, batch.Bytes())
+		bytebufferpool.Put(batch.ByteBuffer)
+
+		httpReq, err := http.NewRequest("POST", remoteStorageURL, bytes.NewReader(sb.Bytes()))
 		if err != nil {
-			snappyBufferPool.Put(sb)
+			bytebufferpool.Put(sb)
 			log.Fatal(err)
 		}
+
 		httpReq.Header.Add("Content-Encoding", "snappy")
 		httpReq.Header.Set("Content-Type", "application/x-protobuf")
 		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 
 		httpResp, err := p.Client.Do(httpReq)
+		bytebufferpool.Put(sb)
 		if err != nil {
-			snappyBufferPool.Put(sb)
 			log.Fatal(err)
 		}
-		snappyBufferPool.Put(sb)
+
 		if httpResp.StatusCode/100 != 2 {
 			b, _ := ioutil.ReadAll(httpResp.Body)
 			log.Fatalf("server returned HTTP status %s: %s", httpResp.Status, string(b))
 		}
-			httpResp.Body.Close()
-		if err != nil {
-			log.Fatalf("Error writing: %s\n", err.Error())
-		}
-	}
-	batchPool.Put(batch)
 
+		httpResp.Body.Close()
+	}
 	return uint64(batch.Len()), 0
 }

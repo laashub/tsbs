@@ -86,3 +86,8 @@ var scratchBufPool = &sync.Pool{
 		return make([]byte, 0, 1024)
 	},
 }
+
+// Flusher flushes data into writer
+type Flusher interface {
+	Flush() error
+}

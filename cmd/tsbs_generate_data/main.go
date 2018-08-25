@@ -164,6 +164,13 @@ func main() {
 		}
 	}
 
+	//flusher, ok := serializer.(serialize.Flusher)
+	//if ok {
+	//	if err := flusher.Flush(); err != nil {
+	//		log.Fatalf("unable to flush serializer %q: %s", format, err)
+	//	}
+	//}
+
 	err := out.Flush()
 	if err != nil {
 		log.Fatal(err.Error())
@@ -217,7 +224,6 @@ func getConfig(useCase string) common.SimulatorConfig {
 func getSerializer(sim common.Simulator, format string, out *bufio.Writer) serialize.PointSerializer {
 	switch format {
 	case formatCassandra:
-		fmt.Println("CASSANDRA!")
 		return &serialize.CassandraSerializer{}
 	case formatInflux:
 		return &serialize.InfluxSerializer{}

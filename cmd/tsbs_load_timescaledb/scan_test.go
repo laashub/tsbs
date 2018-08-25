@@ -78,7 +78,6 @@ func TestDecode(t *testing.T) {
 		br := bufio.NewReader(bytes.NewReader([]byte(c.input)))
 		decoder := &decoder{scanner: bufio.NewScanner(br)}
 		if c.shouldFatal {
-			fmt.Println(c.desc)
 			isCalled := false
 			fatal = func(fmt string, args ...interface{}) {
 				isCalled = true
