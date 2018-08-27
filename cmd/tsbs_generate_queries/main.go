@@ -17,6 +17,7 @@ import (
 	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/databases/influx"
 	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/databases/mongo"
 	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/databases/timescaledb"
+	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/databases/prometheus"
 	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/uses/devops"
 	"github.com/hagen1778/tsbs/cmd/tsbs_generate_queries/utils"
 )
@@ -65,6 +66,8 @@ func getGenerator(format string, start, end time.Time, scale int) utils.DevopsGe
 		return influx.NewDevops(start, end, scale)
 	} else if format == "mongo" {
 		return mongo.NewDevops(start, end, scale)
+	} else if format == "prometheus" {
+		return prometheus.NewDevops(start, end, scale)
 	} else if format == "mongo-naive" {
 		return mongo.NewNaiveDevops(start, end, scale)
 	} else if format == "timescaledb" {
