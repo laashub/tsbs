@@ -66,8 +66,8 @@ func (p *processor) Close(_ bool) {}
 func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 	var err error
 	batch := b.(*batch)
-	if !doLoad {
-		return uint64(batch.Len()), 0
+	if !doLoad || len(batch.Bytes()) == 0 {
+		return 0, 0
 	}
 
 	httpReq, err := http.NewRequest("POST", remoteStorageURL, bytes.NewReader(batch.Bytes()))

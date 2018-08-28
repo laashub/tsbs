@@ -21,10 +21,10 @@ type PrometheusSerializer struct {
 
 // Flush flushes collected series into writer
 func (s *PrometheusSerializer) Flush() error {
-	request := &prompb.WriteRequest{
+	wr := &prompb.WriteRequest{
 		Timeseries: s.series[:s.cur],
 	}
-	data, err := request.Marshal()
+	data, err := wr.Marshal()
 	if err != nil {
 		return err
 	}
