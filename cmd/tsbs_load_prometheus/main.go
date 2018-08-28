@@ -63,10 +63,8 @@ func (p *processor) Init(numWorker int, _ bool) {
 
 func (p *processor) Close(_ bool) {}
 
-// max number of retries to Do request
-const maxRetryAttempts = 3
-
 func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
+	var err error
 	batch := b.(*batch)
 	if !doLoad {
 		return uint64(batch.Len()), 0
@@ -81,16 +79,11 @@ func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 
-	var attempts int
+	var httpResp *http.Response
+	failurePeriod := time.After(time.Second*5)
 	for {
-		attempts++
-		httpResp, err := p.Client.Do(httpReq)
-		if err == nil && httpResp.StatusCode/100 == 2  {
-			httpResp.Body.Close()
-			break
-		}
-
-		if attempts >= maxRetryAttempts {
+		select {
+		case <- failurePeriod:
 			if err != nil {
 				log.Fatalf("error while executing request: %s", err)
 			}
@@ -98,9 +91,15 @@ func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 				b, _ := ioutil.ReadAll(httpResp.Body)
 				log.Fatalf("server returned HTTP status %s: %s", httpResp.Status, string(b))
 			}
+			break
+		default:
+			httpResp, err = p.Client.Do(httpReq)
+			if err == nil && httpResp.StatusCode/100 == 2  {
+				httpResp.Body.Close()
+				break
+			}
+			time.Sleep(time.Millisecond*10)
 		}
-		time.Sleep(time.Millisecond*200)
 	}
-
 	return uint64(batch.Len()), 0
 }
