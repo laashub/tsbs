@@ -80,7 +80,7 @@ func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 
 	var httpResp *http.Response
-	failurePeriod := time.After(time.Second*5)
+	failurePeriod := time.After(time.Second)
 	for {
 		select {
 		case <- failurePeriod:
