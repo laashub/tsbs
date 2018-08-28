@@ -29,6 +29,7 @@ func (s *scanner) scan() bool {
 		return false
 	}
 	packetSize := unmarshalUint64(sizeBuf)
+
 	s.buf = resize(s.buf, int(packetSize))
 	if _, err := io.ReadFull(s.r, s.buf); err != nil {
 		log.Printf("ERROR: cannot read body size: %s", err)

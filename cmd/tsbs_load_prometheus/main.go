@@ -11,10 +11,6 @@ import (
 	"io/ioutil"
 
 	"github.com/hagen1778/tsbs/load"
-	"github.com/klauspost/compress/snappy"
-
-	_ "net/http/pprof"
-	"github.com/valyala/bytebufferpool"
 )
 
 var (
@@ -52,9 +48,6 @@ func (b *benchmark) GetDBCreator() load.DBCreator {
 }
 
 func main() {
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
 	loader.RunBenchmark(&benchmark{}, load.SingleQueue)
 }
 
@@ -73,22 +66,15 @@ func (p *processor) Close(_ bool) {}
 func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 	batch := b.(*batch)
 	if doLoad {
-		sb := bytebufferpool.Get()
-		sb.B = snappy.Encode(sb.B, batch.Bytes())
-		bytebufferpool.Put(batch.ByteBuffer)
-
-		httpReq, err := http.NewRequest("POST", remoteStorageURL, bytes.NewReader(sb.Bytes()))
+		httpReq, err := http.NewRequest("POST", remoteStorageURL, bytes.NewReader(batch.Bytes()))
 		if err != nil {
-			bytebufferpool.Put(sb)
 			log.Fatal(err)
 		}
 
 		httpReq.Header.Add("Content-Encoding", "snappy")
 		httpReq.Header.Set("Content-Type", "application/x-protobuf")
 		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
-
 		httpResp, err := p.Client.Do(httpReq)
-		bytebufferpool.Put(sb)
 		if err != nil {
 			log.Fatal(err)
 		}

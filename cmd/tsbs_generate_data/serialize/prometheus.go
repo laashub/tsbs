@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/hagen1778/prometheus/prompb"
+	"github.com/valyala/bytebufferpool"
+	"github.com/klauspost/compress/snappy"
 )
 
 const PrometheusBatchSize = 25*1e3
@@ -27,14 +29,19 @@ func (s *PrometheusSerializer) Flush() error {
 		return err
 	}
 
+	sb := bytebufferpool.Get()
+	sb.B = snappy.Encode(sb.B, data)
+
 	var sizeBuf []byte
-	sizeBuf = marshalUint64(sizeBuf[:0], uint64(len(data)))
+	sizeBuf = marshalUint64(sizeBuf[:0], uint64(sb.Len()))
 	if _, err := s.w.Write(sizeBuf); err != nil {
+		bytebufferpool.Put(sb)
 		return err
 	}
 
-	_, err = s.w.Write(data)
+	_, err = s.w.Write(sb.Bytes())
 	s.cur = 0
+	bytebufferpool.Put(sb)
 	return err
 }
 
