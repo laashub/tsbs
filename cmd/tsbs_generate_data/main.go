@@ -164,12 +164,12 @@ func main() {
 		}
 	}
 
-	//flusher, ok := serializer.(serialize.Flusher)
-	//if ok {
-	//	if err := flusher.Flush(); err != nil {
-	//		log.Fatalf("unable to flush serializer %q: %s", format, err)
-	//	}
-	//}
+	flusher, ok := serializer.(serialize.Flusher)
+	if ok {
+		if err := flusher.Flush(); err != nil {
+			log.Fatalf("unable to flush serializer %q: %s", format, err)
+		}
+	}
 
 	err := out.Flush()
 	if err != nil {
