@@ -63,28 +63,44 @@ func (p *processor) Init(numWorker int, _ bool) {
 
 func (p *processor) Close(_ bool) {}
 
+// max number of retries to Do request
+const maxRetryAttempts = 3
+
 func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 	batch := b.(*batch)
-	if doLoad {
-		httpReq, err := http.NewRequest("POST", remoteStorageURL, bytes.NewReader(batch.Bytes()))
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		httpReq.Header.Add("Content-Encoding", "snappy")
-		httpReq.Header.Set("Content-Type", "application/x-protobuf")
-		httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
-		httpResp, err := p.Client.Do(httpReq)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if httpResp.StatusCode/100 != 2 {
-			b, _ := ioutil.ReadAll(httpResp.Body)
-			log.Fatalf("server returned HTTP status %s: %s", httpResp.Status, string(b))
-		}
-
-		httpResp.Body.Close()
+	if !doLoad {
+		return uint64(batch.Len()), 0
 	}
+
+	httpReq, err := http.NewRequest("POST", remoteStorageURL, bytes.NewReader(batch.Bytes()))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	httpReq.Header.Add("Content-Encoding", "snappy")
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+
+	var attempts int
+	for {
+		attempts++
+		httpResp, err := p.Client.Do(httpReq)
+		if err == nil && httpResp.StatusCode/100 == 2  {
+			httpResp.Body.Close()
+			break
+		}
+
+		if attempts >= maxRetryAttempts {
+			if err != nil {
+				log.Fatalf("error while executing request: %s", err)
+			}
+			if httpResp.StatusCode/100 != 2 {
+				b, _ := ioutil.ReadAll(httpResp.Body)
+				log.Fatalf("server returned HTTP status %s: %s", httpResp.Status, string(b))
+			}
+		}
+		time.Sleep(time.Millisecond*200)
+	}
+
 	return uint64(batch.Len()), 0
 }
