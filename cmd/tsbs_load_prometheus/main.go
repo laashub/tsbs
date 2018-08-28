@@ -91,15 +91,14 @@ func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 				b, _ := ioutil.ReadAll(httpResp.Body)
 				log.Fatalf("server returned HTTP status %s: %s", httpResp.Status, string(b))
 			}
-			break
+			return 0, 0
 		default:
 			httpResp, err = p.Client.Do(httpReq)
 			if err == nil && httpResp.StatusCode/100 == 2  {
 				httpResp.Body.Close()
-				break
+				return uint64(batch.Len()), 0
 			}
 			time.Sleep(time.Millisecond*10)
 		}
 	}
-	return uint64(batch.Len()), 0
 }
