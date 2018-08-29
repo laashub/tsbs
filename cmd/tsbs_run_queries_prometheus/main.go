@@ -4,8 +4,9 @@ import (
 	"flag"
 	"net/http"
 	"time"
-	"bufio"
-	"io"
+	"io/ioutil"
+	"encoding/json"
+	"fmt"
 
 	"github.com/hagen1778/tsbs/query"
 )
@@ -35,13 +36,25 @@ func newProcessor() query.Processor { return &processor{} }
 func (p *processor) Init(workerNumber int) {
 }
 
+type response struct {
+	Status string `json:"status"`
+	Data struct {
+		Result []result `json:"result"`
+	} `json:"data"`
+}
+
+type result struct {
+	Metric interface{} `json:"metric"`
+	Values []interface{} `json:"values"`
+}
+
 func (p *processor) ProcessQuery(q query.Query, _ bool) ([]*query.Stat, error) {
 	hq := q.(*query.HTTP)
 
 	// populate a request with data from the Query:
 	req, err := http.NewRequest(string(hq.Method), url+string(hq.Path), nil)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("error while creating new request: %s", err)
 	}
 
 	// Perform the request while tracking latency:
@@ -52,20 +65,23 @@ func (p *processor) ProcessQuery(q query.Query, _ bool) ([]*query.Stat, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		panic("http request did not return status 200 OK")
+		return nil, fmt.Errorf("non-200 statuscode received: %d", resp.StatusCode)
 	}
 
-	reader := bufio.NewReader(resp.Body)
-	buf := make([]byte, 8192)
-	for {
-		_, err = reader.Read(buf)
-		if err == io.EOF {
-			err = nil
-			break
-		} else if err != nil {
-			panic(err)
-		}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error while reading response body: %s", err)
 	}
+
+	r := response{}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return nil, fmt.Errorf("error while unmarshaling response: %s", err)
+	}
+
+	if len(r.Data.Result) == 0 {
+		return nil, fmt.Errorf("response must contain at least one datapoint; got: %#v", r.Data.Result)
+	}
+
 	lag := float64(time.Since(start).Nanoseconds()) / 1e6 // milliseconds
 	stat := query.GetStat()
 	stat.Init(q.HumanLabelName(), lag)

@@ -33,16 +33,8 @@ func getHostClause(hostnames []string) string {
 	if len(hostnames) == 1 {
 		return fmt.Sprintf("hostname='%s'", hostnames[0])
 	}
+
 	return fmt.Sprintf("hostname=~'%s'", strings.Join(hostnames, "|"))
-}
-
-func (d *Devops) getSelectClausesAggMetrics(agg string, metrics, hosts []string) []string {
-	selectClauses := make([]string, len(metrics))
-	for i, m := range metrics {
-		selectClauses[i] = fmt.Sprintf("%s(%s) by (__name__)", agg, m)
-	}
-
-	return selectClauses
 }
 
 func getSelectClause(metrics, hosts []string) string {
@@ -50,111 +42,127 @@ func getSelectClause(metrics, hosts []string) string {
 		panic("BUG: must be at least one metric name in clause")
 	}
 	metricsCPU := make([]string, len(metrics))
+	// concat with measurementName to get full metric name
 	for i, v := range metrics {
 		metricsCPU[i] = fmt.Sprintf("cpu_%s", v)
 	}
 
-	metricsClause := strings.Join(metricsCPU, "|")
 	hostClause := getHostClause(hosts)
 	if len(metrics) == 1 {
 		return fmt.Sprintf("%s{%s}", metricsCPU[0], hostClause)
 	}
+
+	metricsClause := strings.Join(metricsCPU, "|")
 	if len(hosts) > 0 {
 		return fmt.Sprintf("{__name__=~%q, %s}", metricsClause, hostClause)
 	}
 	return fmt.Sprintf("{__name__=~%q}", metricsClause)
 }
 
-// GroupByTime selects the MAX for numMetrics metrics under 'cpu',
-// for nhosts hosts,
+type queryInfo struct {
+	// prometheus query
+	query string
+	// label to describe type of query
+	label string
+	// time range for query executing
+	timeRange time.Duration
+	// period of time to group by in seconds
+	step string
+}
+
+// GroupByTime selects the MAX for numMetrics metrics under 'cpu' for nhosts hosts,
 // e.g.:
-// max({__name__=~"metric1|metric2...|metricN",hostname=~"hostname1|hostname2...|hostnameN"}) by (__name__)
-func (d *Devops) GroupByTime(qi query.Query, nHosts, numMetrics int, timeRange time.Duration) {
+// max({__name__=~"metric1|metric2...|metricN",hostname=~"hostname1|hostname2...|hostnameN"})
+func (d *Devops) GroupByTime(qq query.Query, nHosts, numMetrics int, timeRange time.Duration) {
 	metrics := devops.GetCPUMetricsSlice(numMetrics)
 	hosts := d.GetRandomHosts(nHosts)
 	selectClause := getSelectClause(metrics, hosts)
-	humanLabel := fmt.Sprintf("Prometheus %d cpu metric(s), random %4d hosts, random %s by 1m", numMetrics, nHosts, timeRange)
-	q := fmt.Sprintf("max(%s) by (__name__)", selectClause)
-	// step is 1m
-	d.fillInQuery(qi, "60", humanLabel, q, timeRange)
+	qi := &queryInfo{
+		query:     fmt.Sprintf("max(%s)", selectClause),
+		label:     fmt.Sprintf("Prometheus %d cpu metric(s), random %4d hosts, random %s by 1m", numMetrics, nHosts, timeRange),
+		timeRange: timeRange,
+		step:      "60",
+	}
+	d.fillInQuery(qq, qi)
 }
 
 // GroupByTimeAndPrimaryTag selects the AVG of numMetrics metrics under 'cpu' per device per hour for a day,
 // e.g. in psuedo-SQL:
 //
 // avg({__name__=~"metric1|metric2...|metricN"}) by (hostname)
-func (d *Devops) GroupByTimeAndPrimaryTag(qi query.Query, numMetrics int) {
+func (d *Devops) GroupByTimeAndPrimaryTag(qq query.Query, numMetrics int) {
 	metrics := devops.GetCPUMetricsSlice(numMetrics)
-	selectClause := getSelectClause( metrics, []string{})
-	humanLabel := devops.GetDoubleGroupByLabel("Prometheus", numMetrics)
-	q := fmt.Sprintf("avg(%s) by (hostname)", selectClause)
-	// step is 1h
-	d.fillInQuery(qi, "3600", humanLabel, q, devops.DoubleGroupByDuration)
+	selectClause := getSelectClause(metrics, []string{})
+	qi := &queryInfo{
+		query:     fmt.Sprintf("avg(%s) by (hostname)", selectClause),
+		label:     devops.GetDoubleGroupByLabel("Prometheus", numMetrics),
+		timeRange: devops.DoubleGroupByDuration,
+		step:      "3600",
+	}
+	d.fillInQuery(qq, qi)
 }
 
 // MaxAllCPU selects the MAX of all metrics under 'cpu' per hour for nhosts hosts,
-// e.g. in psuedo-SQL:
+// e.g.:
 //
-// SELECT MAX(metric1), ..., MAX(metricN)
-// FROM cpu WHERE (hostname = '$HOSTNAME_1' OR ... OR hostname = '$HOSTNAME_N')
-// AND time >= '$HOUR_START' AND time < '$HOUR_END'
-// GROUP BY hour ORDER BY hour
-func (d *Devops) MaxAllCPU(qi query.Query, nHosts int) {
-	metrics := devops.GetAllCPUMetrics()
-	hosts := d.GetRandomHosts(nHosts)
-	selectClause := getSelectClause( metrics, hosts)
-	humanLabel := devops.GetMaxAllLabel("Prometheus", nHosts)
-	q := fmt.Sprintf("max(%s) by (__name__)", selectClause)
-	// step is 1m
-	d.fillInQuery(qi, "60", humanLabel, q, devops.MaxAllDuration)
+// max({__name__=~"cpu_.*", hostname=~"hostname1|hostname2...|hostnameN"})
+func (d *Devops) MaxAllCPU(qq query.Query, nHosts int) {
+	var q string
+	if nHosts > 0 {
+		hosts := d.GetRandomHosts(nHosts)
+		hostsClause := getHostClause(hosts)
+		q = fmt.Sprintf("__name__=~\"cpu_.*\", %s", hostsClause)
+	} else {
+		q = "__name__=~\"cpu_.*\""
+	}
+	q = fmt.Sprintf("max({%s})", q)
+	qi := &queryInfo{
+		query:     q,
+		label:     devops.GetMaxAllLabel("Prometheus", nHosts),
+		timeRange: devops.MaxAllDuration,
+		step:      "3600",
+	}
+	d.fillInQuery(qq, qi)
 }
 
 // HighCPUForHosts populates a query that gets CPU metrics when the CPU has high
 // usage between a time period for a number of hosts (if 0, it will search all hosts),
-// e.g. in psuedo-SQL:
+// e.g.:
 //
-// SELECT * FROM cpu
-// WHERE usage_user > 90.0
-// AND time >= '$TIME_START' AND time < '$TIME_END'
-// AND (hostname = '$HOST' OR hostname = '$HOST2'...)
-func (d *Devops) HighCPUForHosts(qi query.Query, nHosts int) {
-	metrics := []string{"cpu", ".*"}
-	hosts := d.GetRandomHosts(nHosts)
-	selectClause := getSelectClause(metrics, hosts)
-	humanLabel := devops.GetHighCPULabel("Prometheus", nHosts)
-	q := fmt.Sprintf("%s > 90", selectClause)
-	// step is 1m
-	d.fillInQuery(qi, "60", humanLabel, q, devops.HighCPUDuration)
+// {__name__=~"cpu_.*", hostname=~"hostname1|hostname2...|hostnameN"} > 90
+func (d *Devops) HighCPUForHosts(qq query.Query, nHosts int) {
+	var q string
+	if nHosts > 0 {
+		hosts := d.GetRandomHosts(nHosts)
+		hostsClause := getHostClause(hosts)
+		q = fmt.Sprintf("__name__=~\"cpu_.*\", %s", hostsClause)
+	} else {
+		q = "__name__=~\"cpu_.*\""
+	}
+	q = fmt.Sprintf("{%s} > 90", q)
+	qi := &queryInfo{
+		query:     q,
+		label:     devops.GetMaxAllLabel("Prometheus", nHosts),
+		timeRange: devops.HighCPUDuration,
+		step:      "60",
+	}
+	d.fillInQuery(qq, qi)
 }
 
-func (d *Devops) fillInQuery(qi query.Query, step, humanLabel, promQuery string, duration time.Duration) {
-	interval := d.Interval.RandWindow(duration)
-	humanDesc := fmt.Sprintf("%s: %s", humanLabel, interval.StartString())
+func (d *Devops) fillInQuery(qq query.Query, qi *queryInfo) {
+	interval := d.Interval.RandWindow(qi.timeRange)
+	humanDesc := fmt.Sprintf("%s: %s", qi.label, interval.StartString())
 
 	v := url.Values{}
-	v.Set("query", promQuery)
+	v.Set("query", qi.query)
 	v.Set("start", strconv.FormatInt(interval.StartUnixNano()/1e9, 10))
 	v.Set("end", strconv.FormatInt(interval.EndUnixNano()/1e9, 10))
-	v.Set("step", step)
+	v.Set("step", qi.step)
 
-	q := qi.(*query.HTTP)
-	q.HumanLabel = []byte(humanLabel)
+	q := qq.(*query.HTTP)
+	q.HumanLabel = []byte(qi.label)
 	q.HumanDescription = []byte(humanDesc)
 	q.Method = []byte("GET")
 	q.Path = []byte(fmt.Sprintf("/api/v1/query_range?%s", v.Encode()))
 	q.Body = nil
 }
-
-/*
-
-
-// LastPointPerHost finds the last row for every host in the dataset
-func (d *Devops) LastPointPerHost(qi query.Query) {
-	humanLabel := "Influx last row per host"
-	humanDesc := humanLabel + ": cpu"
-	influxql := "SELECT * from cpu group by \"hostname\" order by time desc limit 1"
-	d.fillInQuery(qi, humanLabel, humanDesc, influxql)
-}
-
-
-*/
