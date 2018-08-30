@@ -107,17 +107,11 @@ func (d *Devops) GroupByTimeAndPrimaryTag(qq query.Query, numMetrics int) {
 //
 // max({__name__=~"cpu_.*", hostname=~"hostname1|hostname2...|hostnameN"})
 func (d *Devops) MaxAllCPU(qq query.Query, nHosts int) {
-	var q string
-	if nHosts > 0 {
-		hosts := d.GetRandomHosts(nHosts)
-		hostsClause := getHostClause(hosts)
-		q = fmt.Sprintf("__name__=~\"cpu_.*\", %s", hostsClause)
-	} else {
-		q = "__name__=~\"cpu_.*\""
-	}
-	q = fmt.Sprintf("max({%s})", q)
+	metrics := devops.GetAllCPUMetrics()
+	hosts := d.GetRandomHosts(nHosts)
+	selectClause := getSelectClause(metrics, hosts)
 	qi := &queryInfo{
-		query:     q,
+		query:     fmt.Sprintf("max(%s)", selectClause),
 		label:     devops.GetMaxAllLabel("Prometheus", nHosts),
 		timeRange: devops.MaxAllDuration,
 		step:      "3600",

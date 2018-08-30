@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"fmt"
 	"bytes"
-	"io/ioutil"
 
 	"github.com/hagen1778/tsbs/load"
 )
@@ -72,7 +71,7 @@ func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 
 	httpReq, err := http.NewRequest("POST", remoteStorageURL, bytes.NewReader(batch.Bytes()))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error while creating new request: %s", err)
 	}
 
 	httpReq.Header.Add("Content-Encoding", "snappy")
@@ -84,18 +83,14 @@ func (p *processor) ProcessBatch(b load.Batch, doLoad bool) (uint64, uint64) {
 	for {
 		select {
 		case <- failurePeriod:
+			log.Fatalf("server returned HTTP status %d", httpResp.Status)
+		default:
+			httpResp, err = p.Client.Do(httpReq)
 			if err != nil {
 				log.Fatalf("error while executing request: %s", err)
 			}
-			if httpResp.StatusCode/100 != 2 {
-				b, _ := ioutil.ReadAll(httpResp.Body)
-				log.Fatalf("server returned HTTP status %s: %s", httpResp.Status, string(b))
-			}
-			return 0, 0
-		default:
-			httpResp, err = p.Client.Do(httpReq)
-			if err == nil && httpResp.StatusCode/100 == 2  {
-				httpResp.Body.Close()
+			httpResp.Body.Close()
+			if httpResp.StatusCode == http.StatusOK {
 				return uint64(batch.Len()), 0
 			}
 			time.Sleep(time.Millisecond*10)

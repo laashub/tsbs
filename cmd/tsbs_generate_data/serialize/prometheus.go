@@ -10,7 +10,7 @@ import (
 	"github.com/klauspost/compress/snappy"
 )
 
-const PrometheusBatchSize = 25*1e3
+const PrometheusBatchSize = 1e4
 
 // PrometheusSerializer writes a Point in a serialized form for Prometheus
 type PrometheusSerializer struct {
